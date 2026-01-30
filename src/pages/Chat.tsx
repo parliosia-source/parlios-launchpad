@@ -82,12 +82,13 @@ const Chat = () => {
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    const userText = input.trim();
+    if (!userText || isLoading) return;
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: "user",
-      content: input,
+      content: userText,
       timestamp: new Date().toISOString(),
     };
 
@@ -102,9 +103,10 @@ const Chat = () => {
       const diagnosticAnswers = storage.getDiagnosticAnswers();
       const diagnosticScores = storage.getDiagnosticScores();
 
-      // Prepare messages for API (only user/assistant, not system)
+      // Prepare messages for API (only user/assistant, not system, last 14 messages)
       const apiMessages = newMessages
         .filter(m => m.id !== "welcome" && !m.id.startsWith("welcome-"))
+        .slice(-14)
         .map(m => ({ role: m.role, content: m.content }));
 
       const { data, error } = await supabase.functions.invoke("chat", {
@@ -144,7 +146,7 @@ const Chat = () => {
       const fallbackMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: getFallbackResponse(input),
+        content: getFallbackResponse(userText),
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, fallbackMessage]);
