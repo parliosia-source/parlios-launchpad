@@ -1,15 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageCircle, Send, ArrowRight } from "lucide-react";
+import { MessageCircle, Send, ArrowRight, Loader2, Trash2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { storage } from "@/lib/storage";
+import { chatStorage, ChatMessage } from "@/lib/chat-storage";
+import { useToast } from "@/hooks/use-toast";
 
-interface Message {
-  id: string;
-  type: "user" | "bot";
-  text: string;
-}
-
+// Fallback responses when API fails
 const predefinedResponses = [
   {
     keywords: ["bloque", "coincé", "perdu", "sais pas"],
@@ -28,47 +27,130 @@ const predefinedResponses = [
   },
 ];
 
-const defaultResponse =
-  "Merci pour ta question ! Je suis encore en version bêta, mais je capte ce que tu dis. Pour l'instant, le meilleur moyen de t'aider, c'est de commencer par le diagnostic.\n\n🔹 Prochaine étape : Fais le diagnostic en 3 min pour avoir un plan personnalisé.";
+const defaultFallbackResponse =
+  "Désolé, je n'ai pas pu me connecter. Réessaie dans quelques instants.\n\n🔹 Prochaine étape : Fais le diagnostic en 3 min pour avoir un plan personnalisé.";
+
+const getFallbackResponse = (input: string): string => {
+  const lowerInput = input.toLowerCase();
+  const matched = predefinedResponses.find((r) =>
+    r.keywords.some((keyword) => lowerInput.includes(keyword))
+  );
+  return matched?.response || defaultFallbackResponse;
+};
 
 const Chat = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      type: "bot",
-      text: "Hey ! 👋 Je suis le coach Parlios (version test). Dis-moi ce qui te bloque en ce moment, je vais essayer de t'aider.\n\n🔹 Prochaine étape : Pose ta question ou décris ta situation.",
-    },
-  ]);
+  const { toast } = useToast();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  // Load chat history on mount
+  useEffect(() => {
+    const history = chatStorage.getHistory();
+    if (history.length > 0) {
+      setMessages(history);
+    } else {
+      // Add welcome message
+      const welcomeMessage: ChatMessage = {
+        id: "welcome",
+        role: "assistant",
+        content: "Hey ! 👋 Je suis le Coach Parlios. Dis-moi ce qui te bloque en ce moment, je vais t'aider à y voir plus clair.\n\n🔹 Prochaine étape : Pose ta question ou décris ta situation.",
+        timestamp: new Date().toISOString(),
+      };
+      setMessages([welcomeMessage]);
+      chatStorage.saveHistory([welcomeMessage]);
+    }
+  }, []);
 
-    const userMessage: Message = {
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      chatStorage.saveHistory(messages);
+    }
+  }, [messages]);
+
+  const clearHistory = () => {
+    const welcomeMessage: ChatMessage = {
+      id: "welcome-" + Date.now(),
+      role: "assistant",
+      content: "Hey ! 👋 Je suis le Coach Parlios. Dis-moi ce qui te bloque en ce moment, je vais t'aider à y voir plus clair.\n\n🔹 Prochaine étape : Pose ta question ou décris ta situation.",
+      timestamp: new Date().toISOString(),
+    };
+    setMessages([welcomeMessage]);
+    chatStorage.saveHistory([welcomeMessage]);
+    toast({ title: "Historique effacé" });
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
+
+    const userMessage: ChatMessage = {
       id: Date.now().toString(),
-      type: "user",
-      text: input,
+      role: "user",
+      content: input,
+      timestamp: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
-
-    // Find matching response
-    const lowerInput = input.toLowerCase();
-    const matchedResponse = predefinedResponses.find((r) =>
-      r.keywords.some((keyword) => lowerInput.includes(keyword))
-    );
-
-    const botResponse: Message = {
-      id: (Date.now() + 1).toString(),
-      type: "bot",
-      text: matchedResponse?.response || defaultResponse,
-    };
-
-    setTimeout(() => {
-      setMessages((prev) => [...prev, botResponse]);
-    }, 800);
-
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setInput("");
+    setIsLoading(true);
+
+    try {
+      // Get context from localStorage
+      const persona = storage.getPersona();
+      const diagnosticAnswers = storage.getDiagnosticAnswers();
+      const diagnosticScores = storage.getDiagnosticScores();
+
+      // Prepare messages for API (only user/assistant, not system)
+      const apiMessages = newMessages
+        .filter(m => m.id !== "welcome" && !m.id.startsWith("welcome-"))
+        .map(m => ({ role: m.role, content: m.content }));
+
+      const { data, error } = await supabase.functions.invoke("chat", {
+        body: {
+          messages: apiMessages,
+          persona,
+          diagnosticAnswers,
+          diagnosticScores,
+        },
+      });
+
+      if (error) {
+        console.error("Chat API error:", error);
+        throw new Error(error.message);
+      }
+
+      if (data?.error) {
+        console.error("Chat response error:", data.error);
+        if (data.error === "rate_limit") {
+          toast({ title: "Patiente un instant", description: "Trop de requêtes, réessaie dans quelques secondes.", variant: "destructive" });
+        }
+        throw new Error(data.message || data.error);
+      }
+
+      const assistantMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: data.message,
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (err) {
+      console.error("Chat error:", err);
+      
+      // Fallback to predefined responses
+      const fallbackMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: getFallbackResponse(input),
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, fallbackMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -82,7 +164,7 @@ const Chat = () => {
             </div>
             <h1 className="text-2xl font-bold text-foreground mb-2">Coach Parlios</h1>
             <p className="text-muted-foreground text-sm">
-              Version test • Réponses limitées
+              Propulsé par l'IA • Personnalisé selon ton profil
             </p>
           </div>
 
@@ -92,19 +174,27 @@ const Chat = () => {
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}
+                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
                     className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                      message.type === "user"
+                      message.role === "user"
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-foreground"
                     }`}
                   >
-                    <p className="text-sm whitespace-pre-line">{message.text}</p>
+                    <p className="text-sm whitespace-pre-line">{message.content}</p>
                   </div>
                 </div>
               ))}
+              {isLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-muted text-foreground rounded-2xl px-4 py-3 flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Coach écrit…</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -113,24 +203,31 @@ const Chat = () => {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
               placeholder="Écris ton message..."
               className="flex-1"
+              disabled={isLoading}
             />
             <Button
               onClick={handleSend}
-              disabled={!input.trim()}
+              disabled={!input.trim() || isLoading}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              <Send size={18} />
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send size={18} />}
             </Button>
           </div>
 
-          {/* CTA */}
-          <div className="mt-6 text-center">
-            <p className="text-muted-foreground text-sm mb-3">
-              Pour un accompagnement complet, commence par le diagnostic
-            </p>
+          {/* Actions */}
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Button
+              onClick={clearHistory}
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-muted-foreground"
+            >
+              <Trash2 size={14} />
+              Effacer l'historique
+            </Button>
             <Button
               onClick={() => (window.location.href = "/diagnostic")}
               variant="outline"
