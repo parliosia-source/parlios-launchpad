@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles } from "lucide-react";
+import CompactPersonaSelector from "./CompactPersonaSelector";
 
 const HeroSection = () => {
   const navigate = useNavigate();
@@ -28,6 +29,11 @@ const HeroSection = () => {
             et un plan d'action concret pour les 7 prochains jours.
           </p>
 
+          {/* Compact Persona Selector - Above the fold */}
+          <div className="mb-8">
+            <CompactPersonaSelector />
+          </div>
+
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in">
             <Button
@@ -48,9 +54,9 @@ const HeroSection = () => {
             </Button>
           </div>
 
-          {/* Social proof mini */}
-          <p className="mt-8 text-sm text-muted-foreground animate-fade-in">
-            Rejoint par 200+ freelances et solopreneurs
+          {/* Concrete promise instead of generic social proof */}
+          <p className="mt-8 text-sm text-muted-foreground animate-fade-in max-w-lg mx-auto">
+            En 3 minutes, tu repars avec : un diagnostic clair + un plan 7 jours + 1 message prêt à envoyer.
           </p>
         </div>
       </div>
