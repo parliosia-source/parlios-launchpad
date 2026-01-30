@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageCircle, Send, ArrowRight, Loader2, Trash2 } from "lucide-react";
+import { MessageCircle, Send, ArrowRight, Loader2, Trash2, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { storage } from "@/lib/storage";
 import { chatStorage, ChatMessage } from "@/lib/chat-storage";
@@ -39,6 +39,28 @@ const getFallbackResponse = (input: string): string => {
     r.keywords.some((keyword) => lowerInput.includes(keyword))
   );
   return matched?.response || defaultFallbackResponse;
+};
+
+const copyToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fallback for older browsers
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 };
 
 const Chat = () => {
@@ -181,17 +203,30 @@ const Chat = () => {
                   key={message.id}
                   className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                      message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-foreground"
-                    }`}
-                  >
-                    {message.role === "user" ? (
+                  {message.role === "user" ? (
+                    <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-primary text-primary-foreground">
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    ) : (
-                      <div className="text-sm">
+                    </div>
+                  ) : (
+                    <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground relative group">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-1 right-1 h-7 w-7 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                        aria-label="Copier"
+                        disabled={isLoading || !message.content}
+                        onClick={async () => {
+                          const success = await copyToClipboard(message.content);
+                          if (success) {
+                            toast({ title: "Copié !" });
+                          } else {
+                            toast({ title: "Erreur", description: "Impossible de copier", variant: "destructive" });
+                          }
+                        }}
+                      >
+                        <Copy size={14} />
+                      </Button>
+                      <div className="text-sm pr-6">
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm, remarkBreaks]}
                           components={{
@@ -216,8 +251,8 @@ const Chat = () => {
                           {message.content}
                         </ReactMarkdown>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
               {isLoading && (
