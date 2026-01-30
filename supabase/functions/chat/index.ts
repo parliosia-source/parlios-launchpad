@@ -67,6 +67,11 @@ Style:
 - Utilise des emojis avec parcimonie (🔹 pour les étapes)
 - Jamais de jargon "guru" ou de promesses irréalistes
 
+Format Markdown:
+- Utilise des listes à puces avec "- " pour les conseils
+- Mets en gras les éléments importants avec **texte**
+- Termine toujours par "**Prochaine étape :** action concrète"
+
 ${contextBlock ? `Contexte utilisateur:${contextBlock}` : "L'utilisateur n'a pas encore fait le diagnostic."}
 
 Réponds toujours en français. Limite tes réponses à 150 mots max.`;

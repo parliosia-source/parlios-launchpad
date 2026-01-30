@@ -7,6 +7,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { storage } from "@/lib/storage";
 import { chatStorage, ChatMessage } from "@/lib/chat-storage";
 import { useToast } from "@/hooks/use-toast";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 
 // Fallback responses when API fails
 const predefinedResponses = [
@@ -185,7 +188,35 @@ const Chat = () => {
                         : "bg-muted text-foreground"
                     }`}
                   >
-                    <p className="text-sm whitespace-pre-line">{message.content}</p>
+                    {message.role === "user" ? (
+                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <div className="text-sm">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkBreaks]}
+                          components={{
+                            p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                            ul: ({ children }) => <ul className="list-disc pl-4 mb-2 last:mb-0 space-y-1">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 last:mb-0 space-y-1">{children}</ol>,
+                            li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                            a: ({ href, children }) => (
+                              <a href={href} target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80">
+                                {children}
+                              </a>
+                            ),
+                            code: ({ children }) => (
+                              <code className="bg-background/50 px-1.5 py-0.5 rounded text-xs font-mono">{children}</code>
+                            ),
+                            pre: ({ children }) => (
+                              <pre className="bg-background/50 p-2 rounded overflow-x-auto text-xs my-2">{children}</pre>
+                            ),
+                          }}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
